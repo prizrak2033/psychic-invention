@@ -3,15 +3,26 @@ requires = ["setuptools>=45", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "brand-orchestrator"
+name = "brand_orchestrator"
 version = "0.1.0"
-description = "An AI orchestrator for brand intelligence and content generation"
+description = "AI agent orchestrator for political stream + culture intelligence (Phase 1 backbone)"
 readme = "README.md"
-requires-python = ">=3.8"
-dependencies = []
+requires-python = ">=3.12"
+dependencies = [
+  "pydantic>=2.7",
+  "python-dotenv>=1.0",
+]
 
 [project.optional-dependencies]
 dev = [
-    "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
+  "pytest>=8.0",
+  "ruff>=0.5",
 ]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["orchestrator*", "scoring*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
