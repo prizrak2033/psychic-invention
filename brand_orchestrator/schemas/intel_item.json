@@ -1,0 +1,35 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Intel Item",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the intel item"
+    },
+    "source": {
+      "type": "string",
+      "description": "Source of the intelligence"
+    },
+    "content": {
+      "type": "string",
+      "description": "Content of the intel item"
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the intel was collected"
+    },
+    "score": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100,
+      "description": "Trend score for the intel item"
+    },
+    "metadata": {
+      "type": "object",
+      "description": "Additional metadata"
+    }
+  },
+  "required": ["id", "source", "content", "timestamp"]
+}
