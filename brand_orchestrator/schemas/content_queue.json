@@ -1,0 +1,37 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Content Queue",
+  "type": "object",
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique identifier for the queue item"
+    },
+    "priority": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 10,
+      "description": "Priority level (0-10)"
+    },
+    "content": {
+      "type": "object",
+      "description": "Content to be queued"
+    },
+    "status": {
+      "type": "string",
+      "enum": ["pending", "processing", "completed", "failed"],
+      "description": "Current status of the queue item"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the item was queued"
+    },
+    "processed_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "Timestamp when the item was processed"
+    }
+  },
+  "required": ["id", "priority", "content", "status", "created_at"]
+}
