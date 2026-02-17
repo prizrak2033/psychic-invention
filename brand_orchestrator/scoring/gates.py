@@ -1,7 +1,5 @@
 """Gates for controlling content flow based on scores."""
 
-from typing import Optional
-
 
 class Gate:
     """Base gate class for score-based filtering."""

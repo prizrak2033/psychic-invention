@@ -1,6 +1,6 @@
 """Runner for executing orchestrator tasks."""
 
-from typing import Optional
+from typing import Dict, Any
 
 
 class Runner:
@@ -17,7 +17,7 @@ class Runner:
         """Stop the runner."""
         self.running = False
 
-    def execute(self, task: Optional[dict] = None) -> None:
+    def execute(self, task: Dict[str, Any] | None = None) -> None:
         """Execute a task."""
         if not self.running:
             raise RuntimeError("Runner is not started")
