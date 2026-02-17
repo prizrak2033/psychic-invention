@@ -1,6 +1,31 @@
 """Trend scoring logic."""
 
+from __future__ import annotations
+
+from dataclasses import dataclass
 from typing import Dict, Any
+
+
+def clamp(value: int, min_val: int, max_val: int) -> int:
+    """Clamp a value between min and max bounds."""
+    return max(min_val, min(value, max_val))
+
+
+@dataclass(frozen=True)
+class ScoreBreakdown:
+    """
+    Breakdown of a trend score into component parts.
+    Phase 1: discrete components that sum to a final score.
+    """
+    impact: int
+    timeliness: int
+    virality: int
+    relevance: int
+    confidence: int
+
+    def total(self) -> int:
+        """Calculate the total score from all components."""
+        return self.impact + self.timeliness + self.virality + self.relevance + self.confidence
 
 
 class TrendScorer:
