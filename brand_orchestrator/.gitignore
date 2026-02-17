@@ -35,6 +35,12 @@ env/
 # Environment variables
 .env
 
+# Database files
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+
 # Cache
 data/cache/*
 !data/cache/.gitkeep
