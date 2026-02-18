@@ -112,7 +112,9 @@ class AppConfig:
         "supremecourt.gov",
     )
     
-    # Cache for as_dict conversion to avoid repeated tuple->list conversions
+    # Cache for as_dict() conversion to avoid repeated tuple->list conversions.
+    # Since AppConfig is frozen/immutable, the dict representation never changes,
+    # so we can safely cache the result. Set via object.__setattr__() in as_dict().
     _dict_cache: dict[str, Any] | None = field(default=None, init=False, repr=False, compare=False)
 
 
@@ -177,6 +179,8 @@ def as_dict(cfg: AppConfig) -> dict[str, Any]:
         },
     }
     
-    # Cache the result since AppConfig is frozen
+    # Cache the result since AppConfig is frozen (immutable).
+    # Use object.__setattr__() to bypass frozen dataclass restriction - this is
+    # the standard pattern for lazy initialization in frozen dataclasses.
     object.__setattr__(cfg, '_dict_cache', result)
     return result
