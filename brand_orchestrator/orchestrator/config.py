@@ -111,6 +111,9 @@ class AppConfig:
         "whitehouse.gov",
         "supremecourt.gov",
     )
+    
+    # Cache for as_dict conversion to avoid repeated tuple->list conversions
+    _dict_cache: dict[str, Any] | None = field(default=None, init=False, repr=False, compare=False)
 
 
 def load_config() -> AppConfig:
@@ -138,8 +141,13 @@ def as_dict(cfg: AppConfig) -> dict[str, Any]:
     """
     For run settings snapshots (stored in DB).
     Keep stable keys so diffs are meaningful.
+    Uses caching to avoid repeated tuple->list conversions.
     """
-    return {
+    # Return cached version if available (AppConfig is frozen/immutable)
+    if cfg._dict_cache is not None:
+        return cfg._dict_cache
+    
+    result = {
         "db_path": str(cfg.db_path),
         "artifacts_dir": str(cfg.artifacts_dir),
         "log_level": cfg.log_level,
@@ -168,3 +176,7 @@ def as_dict(cfg: AppConfig) -> dict[str, Any]:
             "allowed_domains_tier_a": list(cfg.allowed_domains_tier_a),
         },
     }
+    
+    # Cache the result since AppConfig is frozen
+    object.__setattr__(cfg, '_dict_cache', result)
+    return result

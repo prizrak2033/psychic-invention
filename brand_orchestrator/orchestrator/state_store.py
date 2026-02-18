@@ -77,6 +77,10 @@ class StateStore:
               created_at TEXT NOT NULL,
               FOREIGN KEY (run_id) REFERENCES runs(run_id)
             );
+
+            -- Performance indexes for foreign key lookups
+            CREATE INDEX IF NOT EXISTS idx_intel_items_run_id ON intel_items(run_id);
+            CREATE INDEX IF NOT EXISTS idx_intel_items_created_at ON intel_items(created_at);
             """
         )
         self._conn.commit()
@@ -154,6 +158,59 @@ class StateStore:
         )
         self._conn.commit()
 
+    def upsert_intel_items_batch(self, items: list[dict[str, Any]]) -> None:
+        """
+        Batch version of upsert_intel_item for better performance.
+        Commits once after all items are inserted, significantly faster for bulk operations.
+        
+        Expected fields per item:
+        item_id, run_id, item_type, title, summary,
+        claims_json (list/dict), evidence_json, scores_json, risk_flags_json, explainability_json
+        optional: decision, decision_reason
+        """
+        if not items:
+            return
+        
+        created_at = utc_now_iso()
+        for item in items:
+            self._conn.execute(
+                """
+                INSERT INTO intel_items(
+                  item_id, run_id, item_type, title, summary,
+                  claims_json, evidence_json, scores_json, risk_flags_json, explainability_json,
+                  decision, decision_reason, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(item_id) DO UPDATE SET
+                  title=excluded.title,
+                  summary=excluded.summary,
+                  claims_json=excluded.claims_json,
+                  evidence_json=excluded.evidence_json,
+                  scores_json=excluded.scores_json,
+                  risk_flags_json=excluded.risk_flags_json,
+                  explainability_json=excluded.explainability_json,
+                  decision=excluded.decision,
+                  decision_reason=excluded.decision_reason
+                """,
+                (
+                    item["item_id"],
+                    item["run_id"],
+                    item["item_type"],
+                    item["title"],
+                    item["summary"],
+                    json.dumps(item.get("claims_json", [])),
+                    json.dumps(item.get("evidence_json", [])),
+                    json.dumps(item.get("scores_json", {})),
+                    json.dumps(item.get("risk_flags_json", [])),
+                    json.dumps(item.get("explainability_json", [])),
+                    item.get("decision"),
+                    item.get("decision_reason"),
+                    created_at,
+                ),
+            )
+        # Single commit for all items - much faster than individual commits
+        self._conn.commit()
+
     def write_telemetry(self, run_id: str, telemetry: dict[str, Any]) -> None:
         self._conn.execute(
             """
@@ -174,21 +231,23 @@ class StateStore:
         ).fetchall()
         out: list[dict[str, Any]] = []
         for r in rows:
+            # Parse all JSON fields once and reuse
+            row_dict = dict(r)
             out.append(
                 {
-                    "item_id": r["item_id"],
-                    "run_id": r["run_id"],
-                    "item_type": r["item_type"],
-                    "title": r["title"],
-                    "summary": r["summary"],
-                    "claims_json": json.loads(r["claims_json"]),
-                    "evidence_json": json.loads(r["evidence_json"]),
-                    "scores_json": json.loads(r["scores_json"]),
-                    "risk_flags_json": json.loads(r["risk_flags_json"]),
-                    "explainability_json": json.loads(r["explainability_json"]),
-                    "decision": r["decision"],
-                    "decision_reason": r["decision_reason"],
-                    "created_at": r["created_at"],
+                    "item_id": row_dict["item_id"],
+                    "run_id": row_dict["run_id"],
+                    "item_type": row_dict["item_type"],
+                    "title": row_dict["title"],
+                    "summary": row_dict["summary"],
+                    "claims_json": json.loads(row_dict["claims_json"]),
+                    "evidence_json": json.loads(row_dict["evidence_json"]),
+                    "scores_json": json.loads(row_dict["scores_json"]),
+                    "risk_flags_json": json.loads(row_dict["risk_flags_json"]),
+                    "explainability_json": json.loads(row_dict["explainability_json"]),
+                    "decision": row_dict["decision"],
+                    "decision_reason": row_dict["decision_reason"],
+                    "created_at": row_dict["created_at"],
                 }
             )
         return out
