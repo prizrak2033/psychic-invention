@@ -1,15 +1,4 @@
-"""Tests for scoring module.
-
-Note: For proper usage, install the package in development mode:
-    pip install -e .
-"""
-
-import sys
-import os
-
-# Add parent directory to path for imports (temporary solution)
-# TODO: Install package with 'pip install -e .' for proper imports
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+"""Tests for scoring module."""
 
 from scoring.trend_score import TrendScorer, ScoreBreakdown, clamp
 from scoring.modifiers import apply_modifiers, ModifierResult
