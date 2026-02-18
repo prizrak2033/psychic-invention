@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import threading
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 
 def utc_now_iso() -> str:
@@ -27,19 +29,99 @@ class StateStore:
     """
     Thin SQLite wrapper. Keeps schema + simple inserts/updates.
     Phase 1: focus on deterministic, auditable logging.
+    
+    Supports context manager pattern for automatic resource cleanup:
+        with StateStore(db_path) as store:
+            store.start_run(...)
+    
+    Thread-safe: Each thread gets its own connection.
     """
 
     def __init__(self, db_path: Path):
         self.db_path = Path(db_path)
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(str(self.db_path))
-        self._conn.row_factory = sqlite3.Row
-        self._conn.execute("PRAGMA journal_mode=WAL;")
-        self._conn.execute("PRAGMA foreign_keys=ON;")
+        self._local = threading.local()
+        self._lock = threading.Lock()
+        # Initialize connection for the current thread
+        self._get_connection()
         self._ensure_schema()
 
+    @property
+    def _conn(self) -> sqlite3.Connection:
+        """Get thread-local connection, creating if needed."""
+        return self._get_connection()
+    
+    @property
+    def _in_transaction(self) -> bool:
+        """Check if we're currently in a transaction."""
+        return getattr(self._local, 'in_transaction', False)
+    
+    @_in_transaction.setter
+    def _in_transaction(self, value: bool) -> None:
+        """Set transaction state."""
+        self._local.in_transaction = value
+    
+    def _get_connection(self) -> sqlite3.Connection:
+        """Get or create a connection for the current thread."""
+        if not hasattr(self._local, 'conn') or self._local.conn is None:
+            conn = sqlite3.connect(
+                str(self.db_path),
+                check_same_thread=False,  # We handle thread safety manually
+                timeout=30.0  # 30 second timeout for locks
+            )
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL;")
+            conn.execute("PRAGMA foreign_keys=ON;")
+            # Disable auto-commit to allow explicit transaction control
+            conn.isolation_level = None  # Auto-commit mode
+            self._local.conn = conn
+        return self._local.conn
+    
+    def _commit_if_not_in_transaction(self) -> None:
+        """Commit unless we're in an explicit transaction."""
+        if not self._in_transaction:
+            self._conn.commit()
+
     def close(self) -> None:
-        self._conn.close()
+        """Close the connection for the current thread."""
+        if hasattr(self._local, 'conn') and self._local.conn is not None:
+            self._local.conn.close()
+            self._local.conn = None
+    
+    def __enter__(self) -> StateStore:
+        """Context manager entry."""
+        return self
+    
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Context manager exit - close connection."""
+        self.close()
+        return None
+    
+    @contextmanager
+    def transaction(self) -> Iterator[None]:
+        """
+        Explicit transaction context manager.
+        
+        Usage:
+            with store.transaction():
+                store.upsert_intel_item(item1)
+                store.upsert_intel_item(item2)
+                # Commits on success, rolls back on exception
+        """
+        conn = self._conn
+        # Mark that we're in a transaction
+        was_in_transaction = self._in_transaction
+        self._in_transaction = True
+        
+        try:
+            conn.execute("BEGIN")
+            yield
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            self._in_transaction = was_in_transaction
 
     def _ensure_schema(self) -> None:
         self._conn.executescript(
@@ -83,7 +165,7 @@ class StateStore:
             CREATE INDEX IF NOT EXISTS idx_intel_items_created_at ON intel_items(created_at);
             """
         )
-        self._conn.commit()
+        self._commit_if_not_in_transaction()
 
     def start_run(self, run_id: str, run_type: str, settings_snapshot: dict[str, Any]) -> RunRecord:
         rec = RunRecord(
@@ -100,7 +182,7 @@ class StateStore:
             """,
             (rec.run_id, rec.run_type, rec.started_at, rec.status, json.dumps(rec.settings_snapshot_json)),
         )
-        self._conn.commit()
+        self._commit_if_not_in_transaction()
         return rec
 
     def finish_run(self, run_id: str, status: str, notes: str | None = None) -> None:
@@ -112,7 +194,7 @@ class StateStore:
             """,
             (utc_now_iso(), status, notes, run_id),
         )
-        self._conn.commit()
+        self._commit_if_not_in_transaction()
 
     def upsert_intel_item(self, item: dict[str, Any]) -> None:
         """
@@ -156,7 +238,7 @@ class StateStore:
                 utc_now_iso(),
             ),
         )
-        self._conn.commit()
+        self._commit_if_not_in_transaction()
 
     def upsert_intel_items_batch(self, items: list[dict[str, Any]]) -> None:
         """
@@ -209,7 +291,7 @@ class StateStore:
                 ),
             )
         # Single commit for all items - much faster than individual commits
-        self._conn.commit()
+        self._commit_if_not_in_transaction()
 
     def write_telemetry(self, run_id: str, telemetry: dict[str, Any]) -> None:
         self._conn.execute(
@@ -222,7 +304,7 @@ class StateStore:
             """,
             (run_id, json.dumps(telemetry), utc_now_iso()),
         )
-        self._conn.commit()
+        self._commit_if_not_in_transaction()
 
     def list_intel_items_for_run(self, run_id: str) -> list[dict[str, Any]]:
         rows = self._conn.execute(
