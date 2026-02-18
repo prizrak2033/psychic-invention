@@ -216,16 +216,25 @@ self._conn.execute(..., self._serialize_intel_item(item, created_at))
 - No way to limit memory usage
 
 **Solution:**
-Added automatic cleanup when metrics reach a configurable limit:
+Added automatic cleanup when metrics reach a configurable limit using `OrderedDict`:
 ```python
+from collections import OrderedDict
+
 class Telemetry:
     MAX_METRICS = 10000  # Configurable limit
     
+    def __init__(self):
+        # OrderedDict maintains insertion order for O(1) removal
+        self.metrics: OrderedDict[str, Dict[str, Any]] = OrderedDict()
+    
     def record_metric(self, name: str, value: Any) -> None:
-        # Remove oldest metric when at capacity
-        if len(self.metrics) >= self.MAX_METRICS:
-            oldest_key = min(self.metrics, key=lambda k: self.metrics[k]["timestamp"])
-            del self.metrics[oldest_key]
+        # Remove oldest metric if at capacity (O(1) operation)
+        if name not in self.metrics and len(self.metrics) >= self.MAX_METRICS:
+            self.metrics.popitem(last=False)  # Remove oldest
+        
+        # Move updated metrics to end (most recent)
+        if name in self.metrics:
+            self.metrics.move_to_end(name)
         
         self.metrics[name] = {
             "value": value,
@@ -238,11 +247,12 @@ class Telemetry:
 - Maintains most recent 10,000 metrics (configurable)
 - Automatic cleanup - no manual intervention needed
 - Safe for long-running processes
+- **Efficient**: O(1) removal using OrderedDict instead of O(n) dictionary scan
 
 **Performance Impact:**
 - Memory usage: Bounded to ~10,000 metrics regardless of runtime
-- CPU overhead: Minimal - only when at capacity (O(n) to find oldest)
-- Trade-off: Acceptable for bounding memory in production systems
+- CPU overhead: O(1) for cleanup (vs O(n) with naive dict implementation)
+- Best practice: Uses appropriate data structure for the access pattern
 
 ---
 
