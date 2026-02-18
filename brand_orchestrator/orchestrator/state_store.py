@@ -196,6 +196,34 @@ class StateStore:
         )
         self._commit_if_not_in_transaction()
 
+    def _serialize_intel_item(self, item: dict[str, Any], created_at: str) -> tuple:
+        """
+        Serialize intel item data for database insertion.
+        Extracts and serializes JSON fields to avoid code duplication.
+        
+        Args:
+            item: Intel item dictionary
+            created_at: ISO timestamp string
+            
+        Returns:
+            Tuple of serialized values ready for SQL parameter binding
+        """
+        return (
+            item["item_id"],
+            item["run_id"],
+            item["item_type"],
+            item["title"],
+            item["summary"],
+            json.dumps(item.get("claims_json", [])),
+            json.dumps(item.get("evidence_json", [])),
+            json.dumps(item.get("scores_json", {})),
+            json.dumps(item.get("risk_flags_json", [])),
+            json.dumps(item.get("explainability_json", [])),
+            item.get("decision"),
+            item.get("decision_reason"),
+            created_at,
+        )
+
     def upsert_intel_item(self, item: dict[str, Any]) -> None:
         """
         Expected fields:
@@ -222,21 +250,7 @@ class StateStore:
               decision=excluded.decision,
               decision_reason=excluded.decision_reason
             """,
-            (
-                item["item_id"],
-                item["run_id"],
-                item["item_type"],
-                item["title"],
-                item["summary"],
-                json.dumps(item.get("claims_json", [])),
-                json.dumps(item.get("evidence_json", [])),
-                json.dumps(item.get("scores_json", {})),
-                json.dumps(item.get("risk_flags_json", [])),
-                json.dumps(item.get("explainability_json", [])),
-                item.get("decision"),
-                item.get("decision_reason"),
-                utc_now_iso(),
-            ),
+            self._serialize_intel_item(item, utc_now_iso()),
         )
         self._commit_if_not_in_transaction()
 
@@ -274,21 +288,7 @@ class StateStore:
                   decision=excluded.decision,
                   decision_reason=excluded.decision_reason
                 """,
-                (
-                    item["item_id"],
-                    item["run_id"],
-                    item["item_type"],
-                    item["title"],
-                    item["summary"],
-                    json.dumps(item.get("claims_json", [])),
-                    json.dumps(item.get("evidence_json", [])),
-                    json.dumps(item.get("scores_json", {})),
-                    json.dumps(item.get("risk_flags_json", [])),
-                    json.dumps(item.get("explainability_json", [])),
-                    item.get("decision"),
-                    item.get("decision_reason"),
-                    created_at,
-                ),
+                self._serialize_intel_item(item, created_at),
             )
         # Single commit for all items - much faster than individual commits
         self._commit_if_not_in_transaction()
