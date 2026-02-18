@@ -195,3 +195,61 @@ def test_batch_update_existing_items():
             assert item["decision"] == "block"
         
         store.close()
+
+
+def test_list_performance_no_dict_conversion():
+    """
+    Test that list_intel_items_for_run uses Row objects directly
+    without unnecessary dict() conversions for better performance.
+    """
+    with tempfile.TemporaryDirectory() as tmpdir:
+        db_path = Path(tmpdir) / "test.db"
+        store = StateStore(db_path)
+        
+        # Start a run
+        store.start_run(
+            run_id="test-run-perf",
+            run_type="daily",
+            settings_snapshot={"test": "config"}
+        )
+        
+        # Create a larger dataset to measure performance
+        items = [
+            {
+                "item_id": f"item-{i}",
+                "run_id": "test-run-perf",
+                "item_type": "article",
+                "title": f"Article {i}" * 10,  # Larger strings
+                "summary": f"Summary {i}" * 20,
+                "claims_json": [f"claim-{j}" for j in range(5)],
+                "evidence_json": [f"evidence-{j}" for j in range(5)],
+                "scores_json": {"total": i * 10, "impact": i, "virality": i * 2},
+                "risk_flags_json": [f"flag-{j}" for j in range(3)],
+                "explainability_json": [f"explanation-{j}" for j in range(5)],
+                "decision": "promote",
+                "decision_reason": f"Reason {i}",
+            }
+            for i in range(100)  # 100 items
+        ]
+        
+        # Insert items
+        store.upsert_intel_items_batch(items)
+        
+        # Retrieve items - should be fast without dict() conversion
+        import time
+        start_time = time.perf_counter()
+        retrieved_items = store.list_intel_items_for_run("test-run-perf")
+        elapsed_time = time.perf_counter() - start_time
+        
+        # Verify correctness
+        assert len(retrieved_items) == 100
+        for i, item in enumerate(retrieved_items):
+            assert item["item_id"] == f"item-{i}"
+            assert isinstance(item["claims_json"], list)
+            assert len(item["claims_json"]) == 5
+        
+        # Performance should be reasonable (< 100ms for 100 items)
+        # This is a loose bound to catch major regressions
+        assert elapsed_time < 0.1, f"List operation took {elapsed_time:.3f}s, expected < 0.1s"
+        
+        store.close()
