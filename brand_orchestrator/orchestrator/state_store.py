@@ -313,23 +313,22 @@ class StateStore:
         ).fetchall()
         out: list[dict[str, Any]] = []
         for r in rows:
-            # Parse all JSON fields once and reuse
-            row_dict = dict(r)
+            # Use Row object directly - no need for dict() conversion
             out.append(
                 {
-                    "item_id": row_dict["item_id"],
-                    "run_id": row_dict["run_id"],
-                    "item_type": row_dict["item_type"],
-                    "title": row_dict["title"],
-                    "summary": row_dict["summary"],
-                    "claims_json": json.loads(row_dict["claims_json"]),
-                    "evidence_json": json.loads(row_dict["evidence_json"]),
-                    "scores_json": json.loads(row_dict["scores_json"]),
-                    "risk_flags_json": json.loads(row_dict["risk_flags_json"]),
-                    "explainability_json": json.loads(row_dict["explainability_json"]),
-                    "decision": row_dict["decision"],
-                    "decision_reason": row_dict["decision_reason"],
-                    "created_at": row_dict["created_at"],
+                    "item_id": r["item_id"],
+                    "run_id": r["run_id"],
+                    "item_type": r["item_type"],
+                    "title": r["title"],
+                    "summary": r["summary"],
+                    "claims_json": json.loads(r["claims_json"]),
+                    "evidence_json": json.loads(r["evidence_json"]),
+                    "scores_json": json.loads(r["scores_json"]),
+                    "risk_flags_json": json.loads(r["risk_flags_json"]),
+                    "explainability_json": json.loads(r["explainability_json"]),
+                    "decision": r["decision"],
+                    "decision_reason": r["decision_reason"],
+                    "created_at": r["created_at"],
                 }
             )
         return out

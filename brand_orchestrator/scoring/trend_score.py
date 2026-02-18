@@ -36,13 +36,10 @@ class TrendScorer:
 
     def calculate_score(self, trend_data: Dict[str, Any]) -> float:
         """Calculate a trend score based on input data."""
-        # Scoring logic here
+        # Use dict.get() for better performance than "if key in dict" checks
         score = self.base_score
+        score += trend_data.get("engagement", 0) * 0.5
+        score += trend_data.get("velocity", 0) * 0.3
         
-        if "engagement" in trend_data:
-            score += trend_data["engagement"] * 0.5
-        
-        if "velocity" in trend_data:
-            score += trend_data["velocity"] * 0.3
-        
+        # Clamp score to valid range
         return min(100.0, max(0.0, score))
