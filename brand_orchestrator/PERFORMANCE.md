@@ -164,6 +164,88 @@ with store.transaction():
 
 ---
 
+### 7. Code Deduplication - JSON Serialization (Code Quality)
+
+**Issue:** Identical JSON serialization logic was duplicated in `upsert_intel_item()` and `upsert_intel_items_batch()` methods.
+
+**Impact:**
+- ~26 lines of duplicate code (13 lines per method)
+- Maintenance burden - changes needed in two places
+- Risk of inconsistencies between methods
+
+**Solution:**
+Extracted common logic into a private helper method:
+```python
+def _serialize_intel_item(self, item: dict[str, Any], created_at: str) -> tuple:
+    """Serialize intel item data for database insertion."""
+    return (
+        item["item_id"],
+        item["run_id"],
+        item["item_type"],
+        item["title"],
+        item["summary"],
+        json.dumps(item.get("claims_json", [])),
+        json.dumps(item.get("evidence_json", [])),
+        json.dumps(item.get("scores_json", {})),
+        json.dumps(item.get("risk_flags_json", [])),
+        json.dumps(item.get("explainability_json", [])),
+        item.get("decision"),
+        item.get("decision_reason"),
+        created_at,
+    )
+
+# Both methods now use the helper
+self._conn.execute(..., self._serialize_intel_item(item, created_at))
+```
+
+**Benefits:**
+- Single source of truth for serialization logic
+- Easier maintenance and future modifications
+- Reduced risk of bugs from inconsistent implementations
+- Better code organization
+
+---
+
+### 8. Telemetry Metrics Bounded Growth (Memory Management)
+
+**Issue:** The `Telemetry.metrics` dictionary grew unbounded as new metrics were recorded, with no cleanup mechanism.
+
+**Impact:**
+- Memory leak potential in long-running processes
+- Could accumulate thousands/millions of metrics over time
+- No way to limit memory usage
+
+**Solution:**
+Added automatic cleanup when metrics reach a configurable limit:
+```python
+class Telemetry:
+    MAX_METRICS = 10000  # Configurable limit
+    
+    def record_metric(self, name: str, value: Any) -> None:
+        # Remove oldest metric when at capacity
+        if len(self.metrics) >= self.MAX_METRICS:
+            oldest_key = min(self.metrics, key=lambda k: self.metrics[k]["timestamp"])
+            del self.metrics[oldest_key]
+        
+        self.metrics[name] = {
+            "value": value,
+            "timestamp": time.time()
+        }
+```
+
+**Benefits:**
+- Prevents unbounded memory growth
+- Maintains most recent 10,000 metrics (configurable)
+- Automatic cleanup - no manual intervention needed
+- Safe for long-running processes
+
+**Performance Impact:**
+- Memory usage: Bounded to ~10,000 metrics regardless of runtime
+- CPU overhead: Minimal - only when at capacity (O(n) to find oldest)
+- Trade-off: Acceptable for bounding memory in production systems
+
+---
+
 ## Performance Test Coverage
 
 All performance improvements are covered by unit tests:
@@ -171,8 +253,9 @@ All performance improvements are covered by unit tests:
 - `test_state_store_performance.py`: Tests batch operations, indexing, and JSON parsing
 - `test_config_performance.py`: Tests config caching behavior
 - `test_connection_management.py`: Tests context managers, transactions, thread-safety
+- `test_telemetry.py`: Tests metrics recording, bounded growth, and cleanup
 
-**Test Results:** 27/27 tests passing
+**Test Results:** 34/34 tests passing
 
 ---
 
@@ -231,13 +314,24 @@ store.upsert_intel_items_batch(items)
    - Transaction support with rollback
    - See `state_store.py` for implementation
 
+2. **Code Deduplication:** ✅ **IMPLEMENTED**
+   - Extracted duplicate JSON serialization logic
+   - Single helper method `_serialize_intel_item()` used by both upsert methods
+   - See `state_store.py` for implementation
+
+3. **Memory Management:** ✅ **IMPLEMENTED**
+   - Bounded metrics storage in Telemetry class
+   - Automatic cleanup of oldest metrics when limit reached
+   - See `telemetry.py` for implementation
+
 ### Remaining Optimization Opportunities
 
 While the current improvements address the most critical bottlenecks, additional optimizations could include:
 
-2. **Async I/O:** Using `aiosqlite` for async database operations
-3. **Query Result Caching:** Cache frequently accessed query results
-4. **Prepared Statements:** Reuse compiled SQL statements
-5. **Bulk JSON Serialization:** Use orjson or ujson for faster JSON operations
+4. **Async I/O:** Using `aiosqlite` for async database operations
+5. **Query Result Caching:** Cache frequently accessed query results
+6. **Prepared Statements:** Reuse compiled SQL statements
+7. **Bulk JSON Serialization:** Use orjson or ujson for faster JSON operations
+8. **Batch Telemetry Writes:** Add `write_telemetry_batch()` method for bulk telemetry operations
 
 These optimizations can be considered in future iterations based on actual usage patterns and profiling data.
