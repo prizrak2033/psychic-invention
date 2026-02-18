@@ -122,14 +122,57 @@ def as_dict(cfg: AppConfig) -> dict[str, Any]:
 
 ---
 
+### 6. Connection Management & Thread Safety
+
+**Issue:** Single connection instance could become a bottleneck under concurrent access, and no proper resource cleanup pattern.
+
+**Impact:**
+- Risk of connection leaks if not properly closed
+- No transaction support for atomic operations
+- Not thread-safe for concurrent workloads
+
+**Solution:**
+Added connection management features in `state_store.py`:
+
+**Context Manager Support:**
+```python
+# Automatic cleanup
+with StateStore(db_path) as store:
+    store.start_run(...)
+    # Connection automatically closed on exit
+```
+
+**Transaction Support:**
+```python
+# Atomic operations with rollback
+with store.transaction():
+    store.upsert_intel_item(item1)
+    store.upsert_intel_item(item2)
+    # Commits on success, rolls back on exception
+```
+
+**Thread-Local Connections:**
+- Each thread gets its own connection via `threading.local()`
+- Safe for concurrent access from multiple threads
+- Connections reused within the same thread
+
+**Benefits:** 
+- Better resource management prevents connection leaks
+- Transaction support ensures data integrity
+- Thread-safe for concurrent access patterns
+- Automatic connection cleanup via context manager
+
+---
+
 ## Performance Test Coverage
 
 All performance improvements are covered by unit tests:
 
 - `test_state_store_performance.py`: Tests batch operations, indexing, and JSON parsing
 - `test_config_performance.py`: Tests config caching behavior
+- `test_connection_management.py`: Tests context managers, transactions, thread-safety
 
-**Test Results:** 21/21 tests passing
+**Test Results:** 27/27 tests passing
 
 ---
 
@@ -180,9 +223,18 @@ store.upsert_intel_items_batch(items)
 
 ## Future Optimization Opportunities
 
+### Completed Optimizations ✅
+
+1. **Connection Pooling & Management:** ✅ **IMPLEMENTED**
+   - Thread-local connections for concurrent access
+   - Context manager support for automatic cleanup
+   - Transaction support with rollback
+   - See `state_store.py` for implementation
+
+### Remaining Optimization Opportunities
+
 While the current improvements address the most critical bottlenecks, additional optimizations could include:
 
-1. **Connection Pooling:** For concurrent access patterns
 2. **Async I/O:** Using `aiosqlite` for async database operations
 3. **Query Result Caching:** Cache frequently accessed query results
 4. **Prepared Statements:** Reuse compiled SQL statements
